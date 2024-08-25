@@ -1,0 +1,307 @@
+---
+title: "Untitled"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+
+
+```{r}
+if (!require("dplyr")) install.packages("dplyr")
+if (!require("ggpubr")) install.packages("ggpubr")
+if (!require("psych")) install.packages("psych")
+if (!require("ggfortify")) install.packages("ggfortify")
+if (!require("car")) install.packages("car")
+
+# Importamos las librerías
+library(dplyr)
+library(ggplot2)
+library(EnvStats)
+library(ggpubr)
+library(tidyverse)
+library(car)
+library(lmtest)
+library(psych)
+library(ggfortify)
+```
+
+
+
+  El equipo crea la variable IMC (índice de masa corporal) como el peso de una persona (en kilogramos) dividida por el cuadrado de su estatura (en metros).
+  
+Si bien esta variable se usa para clasificar a las personas en varias clases de estado nutricional (bajo peso, normal, sobrepeso, obesidad, obesidad mórbida), para efectos de este ejercicio, usaremos dos clases: sobrepeso (IMC ≥ 23,2) y no sobrepeso (IMC < 23,2).
+
+El equipo crea la variable dicotómica EN (estado nutricional) de acuerdo al valor de IMC de cada persona.
+Ahora podemos construir un modelo de regresión logística para predecir la variable EN, de acuerdo con las siguientes instrucciones:
+
+ 1. Definir la semilla a utilizar, que corresponde a los últimos cuatro dígitos del RUN (sin considerar el dígito verificador) del integrante de mayor edad del equipo. 
+
+ 2. Seleccionar una muestra de 150 mujeres (si la semilla es un número par) o 150 hombres (si la semilla es impar), asegurando que la mitad tenga estado nutricional “sobrepeso” y la otra mitad “no sobrepeso” en cada caso. Dividir esta muestra en dos conjuntos: los datos de 100 personas (50 con EN “sobrepeso”) para utilizar en la construcción de los modelos y 50 personas (25 con EN “sobrepeso”) para poder evaluarlos.
+
+ 3. Recordar las ocho posibles variables predictoras seleccionadas de forma aleatoria en el ejercicio anterior.
+
+4. Seleccionar, de las otras variables, una que el equipo considere que podría ser útil para predecir la clase EN, justificando bien esta selección (idealmente con literatura).
+
+5.Usando el entorno R, construir un modelo de regresión logística con el predictor seleccionado en el paso anterior y utilizando de la muestra obtenida.
+
+### 6.Usando estas herramientas para la exploración de modelos del entorno R1, buscar entre dos y cinco predictores de entre las variables seleccionadas al azar, recordadas en el punto 3, para agregar al modelo obtenido en el paso 5.
+
+### 7.Evaluar la confiabilidad de los modelos (i.e. que tengan un buen nivel de ajuste y son generalizables) y “arreglarlos” en caso de que tengan algún problema.
+
+### 8.Usando código estándar1, evaluar el poder predictivo de los modelos con los datos de las 50 personas que no se incluyeron en su construcción en términos de sensibilidad y especificidad.
+
+
+Primero se habrira el archoivo de datos llamdo EP09 Datos.csv y se carga en el data frame llamdo "Datos"
+
+```{r}
+# Lectura de archivo
+# Se abre el CSV, cambiar la ruta según corresponda
+nombre_archivo <- "EP09 Datos.csv"
+datos <- read.csv2(nombre_archivo)
+
+```
+
+
+ahora se define la semilla, y se crea en el data frame una nueva columna que indica el IMC y el EN, para esta ultima se revisa si el IMC es superior a un umbral (23.2), de ser mayor se considera en sobrepeso y en la columna EN, se anota un 1, en caso contrario se considera sin sobrepeso, y se anota un 0, esto se hace para poder trabajar este parametro de mejor manera y evitar posibles complicaciones en un futuro, tambien se crean los conjuntos de prueba y de entrenamiento considerando las condiciones solicitadas.
+
+```{r}
+# Definir la semilla
+set.seed(5824) # Semilla par, se seleccionan mujeres
+
+#Se crea una nueva columna para cada fila
+datos$IMC <- datos$Weight / (datos$Height/100)^2
+
+
+# Se crea la variable dicotómica EN, (Sobrepeso = 1, No sobrepeso = 0)
+datos$EN <- ifelse(datos$IMC >= 23.2, 1, 0)
+
+
+# Seleccionar una muestra aleatoria de 150 mujeres (si la semilla es un número par)
+datos_mujeres_sinsobrepeso <- datos %>%
+  filter(Gender == 0, EN==0) %>%
+  sample_n(75)
+
+datos_mujeres_consobrepeso <- datos %>%
+  filter(Gender == 0, EN==1) %>%
+  sample_n(75)
+
+#Separamos los conjuntos de prueba y entrenamiento
+m_sinS_prueba <- head(datos_mujeres_sinsobrepeso, 50)
+m_conS_prueba <- head(datos_mujeres_consobrepeso, 50)
+
+m_sinS_entrenamiento <- tail(datos_mujeres_sinsobrepeso, 25)
+m_conS_entrenamiento <- tail(datos_mujeres_consobrepeso, 25)
+
+#Juntamos los conjuntos de prueba y entrenamiento
+datos_prueba <- rbind(m_sinS_prueba, m_conS_prueba)
+datos_entrenamiento <- rbind(m_sinS_entrenamiento, m_conS_entrenamiento)
+
+
+#Creamos una lista con las variables predictoras Elbows.diameter + Bitrochanteric.diameter + Chest.diameter + Waist.Girth + Bicep.Girth + Chest.depth + Calf.Maximum.Girth + Navel.Girth
+variables <- c("Elbows.diameter", "Bitrochanteric.diameter", "Chest.diameter", "Waist.Girth", "Bicep.Girth", "Chest.depth", "Calf.Maximum.Girth", "Navel.Girth")
+
+```
+
+
+
+debido a como se filtraron los datos, estos estan ordenados, entiendase por esto que al inicio estan todos losdatos en los cuales en parametro "EN" es igual a 1 y luego estan todos los que "EN" es igual a 0, por lo cual se desordenaran los datos utilizando la funcion sample.
+```{r}
+#Desordenamos los datos con sample
+datos_prueba <- datos_prueba[sample(nrow(datos_prueba)),]
+datos_entrenamiento <- datos_entrenamiento[sample(nrow(datos_entrenamiento)),]
+```
+
+
+Ahora se crea un modelo de regresion logistica con la variable elegida y uno nulo, la cual fue "Biiliac.diameter", se eligio esta variable debido a que....
+```{r}
+#Modelo Nulo
+modeloNulo <- glm(EN ~ 1, data = datos_entrenamiento, family = binomial)
+
+#usar pero falta justificar de buena manera
+modeloSimple <- glm(EN ~ Biiliac.diameter, data = datos_entrenamiento, family = binomial)
+summary(modeloSimple)
+```
+
+
+
+ahora se utilizaran las herramientas presentes en R para seleccionar otras variables predictoras,claramente se elegiran las variables que mas influyan en la prediccion del modelo, sin sobreajustarlo, y sin ningun sesgo en su eleccion, para esto se utilizara las variables que fueron seleccionadas de forma aleatoria en la actividad anterior
+```{r}
+modelo_completo <- glm(EN ~ Biiliac.diameter + Shoulder.Girth + Elbows.diameter + Bitrochanteric.diameter + Chest.diameter + Waist.Girth + Bicep.Girth + Chest.depth + Calf.Maximum.Girth + Navel.Girth, data = datos_entrenamiento, family = binomial)
+
+modeloTest <- add1(modeloSimple, scope = modelo_completo)
+modeloTest
+
+```
+
+analizando los datos, mirando valor de "AIC", se puede apreciar que la variable con el "AIC" mas pequeño es: "bicep.girth", por lo tanto esta es la primera variable que sera añadida al modelo, luego se crearan mas modelos añadiendo en cada uno una variable extra, estas variables seran elegidas, por su "AIC", cabe señalar que seran las 5 variables con menor "AIC"
+
+```{r}
+#Modificamos el modelo añadiendo el predictor que nos dio el menor AIC, "Bicep.Girth"
+modelo_simple2 <- update(modeloSimple, . ~ . + Bicep.Girth)
+AIC_2 <- add1(modelo_simple2, scope = modelo_completo)
+AIC_2
+```
+
+```{r}
+#Modificamos el modelo añadiendo el predictor "Navel.Grith"
+modelo_simple3 <- update(modelo_simple2, . ~ . + Navel.Girth)
+AIC_2 <- add1(modelo_simple2, scope = modelo_completo)
+AIC_2
+```
+
+```{r}
+#Añadimos un predictor más, que sería Waist.Girth
+modelo_simple4 <- update(modelo_simple3, . ~ . + Waist.Girth)
+AIC_3 <- add1(modelo_simple3, scope = modelo_completo)
+AIC_3
+```
+
+```{r}
+#Añadimos un predictor más, que sería Shoulder.Girth
+modelo_simple5 <- update(modelo_simple4, . ~ . + Shoulder.Girth)
+AIC_4 <- add1(modelo_simple4, scope = modelo_completo)
+AIC_4
+
+```
+
+```{r}
+#Añadimos un predictor más, que sería Chest.depth
+modelo_simple6 <- update(modelo_simple5, . ~ . + Chest.depth)
+AIC_5 <- add1(modelo_simple5, scope = modelo_completo)
+AIC_5
+```
+
+Se crearon 5 modelos distintos, donde cada uno tiene un predictor más que el anterior, siendo el modelo con más predictores "modelo_simple6" y el con menos predictores (sin tomar en cuenta el modelo nulo y el modelo con 1 solo predictor)  
+
+
+```{r}
+modeloA <- predict(modelo_simple2, datos_prueba, type = "response")
+modeloB <- predict(modelo_simple3, datos_prueba, type = "response")
+modeloC <- predict(modelo_simple4, datos_prueba, type = "response")
+modeloD <- predict(modelo_simple5, datos_prueba, type = "response")
+modeloE <- predict(modelo_simple6, datos_prueba, type = "response")
+```
+
+se utiliza ANOVA para comparar los modelos entre si.
+```{r}
+print(anova(modeloNulo, modelo_simple2, modelo_simple3, modelo_simple4, modelo_simple5, modelo_simple6, test = "LRT"))
+```
+
+
+como se puede apreciar no hay diferencias mayores apartir del "modelo_simple2", por lo tanto debido a que si bien "modelo_simple2" y "modelo_simple3" no poseen diferencias significativas, se eligio este ultimo debido a que apartir de "modelo_simple3" la diferencia es aun mas baja que entre "modelo_simple2" y "modelo_simple3"
+
+
+ahora se revisara si "modelo_simple3", cumple las condiciones para generalizarlo.
+
+estas condiciones son:
+1.- la linealidad de los predictores
+2.- la independencia de los residuos
+y ademas de comprobara la multicolinealidad
+
+
+para comprobar la linealidad de los predictores se realizara un grafico
+```{r}
+### Verificar linealidad con los predictores
+datos_lin_w <- datos_entrenamiento %>%
+  select_all() %>%
+  mutate(Logit = psych::logit(fitted(modelo_simple3)))
+datos_lin_l <- pivot_longer(datos_lin_w, cols = c(Biiliac.diameter, Bicep.Girth, Navel.Girth), names_to = "Predictor", values_to = "Valor")
+
+P_1 <- ggscatter(datos_lin_l, x = "Logit", y = "Valor", ylab = "Valor del predictor")
+P_1 <- P_1 + geom_smooth(method = lm, formula = y ~ x, se = TRUE)
+P_1 <- P_1 + theme_pubr()
+P_1 <- P_1 + facet_wrap(~ Predictor, scales = "free_y")
+print(P_1)
+
+```
+
+como se puede apreciar pese a haber algunos valores que se elejan de la recta, aun asi se puede afirmar que se cumple que los predictores son lineales
+
+ahora se revisara la independencia de los residuos, para lo cual se utilizara durbinWatsonTest
+
+```{r}
+
+### Verificar independencia de los residuos
+cat("\n")
+cat("Verificación de independencia de los residuos\n")
+cat("-------------------------------------------\n")
+print(durbinWatsonTest(modelo_simple3))
+
+```
+
+como  se puede apreciar por los valores, los residuos son independientes
+
+
+ahora se revisara la multicolinealidad
+
+```{r}
+###Vericamos la multicolinealidad
+vifs_3 <- vif(modelo_simple3)
+print(vifs_3)
+print(mean(vifs_3))
+
+### Revisar posibles casos influyentes
+estad_inf <- influence.measures(modelo_simple3)
+estad_infmat <- round(estad_inf$infmat, 3)
+cat("\n")
+cat("Casos sospechosos de apalancamiento\n")
+cat("-----------------------------------\n")
+
+##< --------------------------- Revisar casos influyente/atipicos ------------------------------>
+
+```
+como se puede apreciar los valores son menores a 10, esto confirma la multicolinealidad.
+
+
+Como podemos ver, se cumplen todas las condiciones para generalizar nuestro model RLM, ya que  los predictores son lineales, los residuos son independientes y se cumple la multicolinealidad de los residuos, por lo que podemos proceder a evaluar el poder predictivo del modelo.
+
+ahora se realizara una curva ROC y una matriz de confucion.
+
+
+```{r}
+# Instalar y cargar las librerías necesarias
+library(pROC)
+library(e1071)
+
+# Evaluación del poder predictivo
+modelo_final <- modelo_simple3
+
+# Obtener las predicciones del modelo
+predicciones_prob <- predict(modelo_final, datos_prueba, type = "response")
+
+# Convertir probabilidades en predicciones binarias con umbral de 0.5
+predicciones <- ifelse(predicciones_prob > 0.5, 1, 0)
+
+# Graficar la curva ROC y calcular el AUC
+roc <- roc(datos_prueba$EN, predicciones_prob)
+plot(roc, main = "Curva ROC", col = "blue")
+auc(roc)
+
+# Crear la matriz de confusión
+
+#prediccones: un vector binario que da valores a la clase predicha en pocas palabras un vector con un 1 o un 0, se coloca un 1 o un 0 de acuerdo a un cierto umbral
+#: actual: los datos reales.
+matriz_confusion <- table(Predicted = predicciones, Actual = datos_prueba$EN)
+print(matriz_confusion)
+
+# Extraer valores de la matriz de confusión
+TP <- matriz_confusion["1", "1"]  # Verdaderos positivos
+TN <- matriz_confusion["0", "0"]  # Verdaderos negativos
+FP <- matriz_confusion["1", "0"]  # Falsos positivos
+FN <- matriz_confusion["0", "1"]  # Falsos negativos
+
+# Calcular métricas
+precision <- TP / (TP + FP)
+recall <- TP / (TP + FN)
+accuracy <- (TP + TN) / (TP + TN + FP + FN)
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Imprimir métricas
+cat("Precisión:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("Exactitud:", accuracy, "\n")
+cat("F1 Score:", f1_score, "\n")
+
+```
+ El modelo muestra un buen desempeño general con una alta sensibilidad y un F1 Score sólido. La capacidad para identificar correctamente casos de sobrepeso es especialmente fuerte, lo que es crucial para este tipo de predicción.
+ por lo tanto el modelo de regresión logística cumple con las expectativas generales para la tarea de clasificación

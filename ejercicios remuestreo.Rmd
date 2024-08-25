@@ -1,0 +1,261 @@
+---
+title: "estudio remuestreo"
+author: "Nicolas salinas"
+date: "2024-08-17"
+output: html_document
+---
+
+# Por si no leiste bien el titulo estos son los ejercicios de perusall de re muestreo (lectura 10B)
+
+
+1. El conjunto de datos diet del paquete WRS2 contiene datos de la pérdida de peso conseguida por tres tipos de dietas. Usando bootstrapping, determina si la pérdida de peso conseguida por las mujeres con las dietas A y C es la misma.
+
+
+cargamos librerias
+```{r}
+
+library(WRS2)
+library(boot)
+library(simpleboot)
+library(ggpubr)
+```
+
+cargamos los datos
+```{r}
+data(diet)
+```
+
+imprimimos los datos para probarlos
+```{r}
+print(diet)
+```
+
+Planteamos las hipotesis
+Hipótesis Nula (Ho): La pérdida de peso conseguida por las mujeres con las dietas A y C es la misma.
+Hipótesis Alternativa (Ha): La pérdida de peso conseguida por las mujeres con las dietas A y C es diferente.
+
+Si analisamos las muestras nos podemos dar cuenta que son muestras independientes, esto debido a que si observamos los datos se puede apreciar que cada persona solo sigue una dieta, por ende la muestra de las personas con la dieta A es independiente de la muestra de la dieta B
+
+por lo mismo se debe utilizar bootstrap para muestras independientes 
+
+para esto primero se prepararan los datos separando en dos grupos, uno para la dieta A y otro para la dieta C
+```{r}
+# Filtrar datos para las dietas A y C
+diet_A <- subset(diet, diet.type == "A")
+diet_C <- subset(diet, diet.type == "C")
+
+
+```
+
+una vez tenemos los datos preparados se procede a realizar el bootstrap
+```{r}
+# Realizar bootstrap
+set.seed(1412)
+distribucion_Botstrap <- two.boot(diet_A$weight.loss, diet_C$weight.loss, FUN = mean,  R = 1000)
+
+
+```
+# Examinar la distribución bootstrap.
+
+
+```{r}
+# Examinar la distribución bootstrap.
+valores <- data.frame(distribucion_Botstrap$t)
+
+print(valores)
+
+colnames (valores) <- "valores"
+ histograma <- gghistogram (valores, x = "valores",
+                             color = "blue",
+                            fill="red",
+                            bins  = 100,
+                            xlab = "Diferencia de medias", 
+                            ylab = "Frecuencia", add = "mean")
+ print (histograma)
+
+qq <- ggqqplot (valores, x = "valores", color = "red")
+print (qq)
+
+#contruir intervalo de confianza 
+intervalo_bca <- boot.ci(distribucion_Botstrap, conf = 0.95, type = "bca")
+print(intervalo_bca)
+
+
+```
+Como se puede apreciar en el grafico el intervalo de confianza incluye el cero por lo que no se puede rechazar la hipotesis nula, por lo que se concluye que la perdida de peso conseguida por las mujeres con las dietas A y C es la misma.
+
+ejercicio 2:
+2. El conjunto de datos essays del paquete WRS2 se compone de datos recolectados por un estudio de los efectos de dos formas de retroalimentación sobre la calidad de la escritura académica producida por estudiantes universitarios/as de inglés como lengua extranjera. Tres de grupos de estudiantes, dos de tratamiento (las dos formas de retroalimentación) y uno de control, se formaron de forma aleatoria. Cada estudiante escribió cuatro ensayos: uno antes del tratamiento, uno de práctica durante el tratamiento, uno terminado el tratamiento y el último un mes después del tratamiento. Obviamente, estudiantes del grupo de control realizaron las tareas de escritura pero no recibieron retroalimentación. Determina si una de las formas de retroalimentación estudiadas (directa o indirecta) es mejor que la otra (considera el ensayo 3 realizado al finalizar la intervención para este análisis) utilizando permutaciones.
+
+
+
+
+
+```{r}
+# Cargar las librerías necesarias
+library(WRS2)
+library(perm)
+
+# Cargar los datos (reemplaza con la ruta de tu archivo si es necesario)
+# essays <- read.csv("path_to_your_file/essays_data.csv")
+
+# Filtrar los datos para el ensayo 3 y las dos formas de retroalimentación
+essays_3 <- subset(essays, essay == "essay3" & group %in% c("Direct", "Indirect"))
+
+# Convertir la variable de grupo en un factor
+essays_3$group <- as.factor(essays_3$group)
+
+# Extraer los grupos de interés
+direct_feedback <- essays_3$errorRatio[essays_3$group == "Direct"]
+indirect_feedback <- essays_3$errorRatio[essays_3$group == "Indirect"]
+
+# Definir la función para calcular la diferencia de medias
+mean_diff <- function(x, y) {
+  mean(x) - mean(y)
+}
+
+# Realizar el análisis de permutaciones usando permTS
+set.seed(1234)  # Para reproducibilidad
+perm_result <- permTS(x = direct_feedback, y = indirect_feedback, FUN = mean_diff, nreps = 1000)
+
+# Mostrar resultados
+print(perm_result)
+
+# Verificar la estructura del objeto perm_result
+str(perm_result)
+
+# Extraer las estadísticas permutadas
+perm_stats <- perm_result$perm.stats
+
+# Si perm_stats no es un vector numérico, intentamos extraer los datos de otra forma
+if (is.list(perm_stats)) {
+  perm_stats <- unlist(perm_stats)
+}
+
+# Comprobar el tipo de perm_stats
+class(perm_stats)
+
+```
+como se puede apreciar el p-value es de 0.9 por lo que no se puede rechazar la hipotesis nula, por lo que se concluye que no hay diferencias significativas entre las dos formas de retroalimentacion
+
+ejercicio 3:
+
+3. Considera el conjunto de datos essays descrito en la pregunta 2. Determina, a través de remuestreo con bootstrapping, si las y los estudiantes del grupo de control pudieron mejorar la tasa de errores cometidos en el tercer ensayo respecto del segundo.
+
+en primera instancia por el contexto se puede apreciar que las muestras son dependientes, debido a que se esta comparando el mismo grupo de personas en dos momentos distintos, por lo que se debe utilizar bootstrap para muestras dependientes
+
+
+
+PLANTEAMOS LAS HIPOTESIS
+Hipótesis Nula (Ho): Los estudiantes del grupo de control no pudieron mejorar la tasa de errores cometidos en el tercer ensayo respecto del segundo.
+Hipótesis Alternativa (Ha): Los estudiantes del grupo de control pudieron mejorar la tasa de errores cometidos en el tercer ensayo respecto del segundo.
+
+
+
+para hacer esto primero se deben preparar los datos
+```{r}
+
+#AÑADIMOS Y INTALAMOS SI ES NECESARIO LA LIBRERIA bootES
+library(bootES)
+
+#IMPRIME LOS DATOS PARA PROBARLOS
+print(essays)
+
+#OBTENEMOS TODOS LOS ENSAYOS DEL GRUPO DE CONTROL
+ensayos_control <- subset(essays, group == "Control")
+
+#OBTENEMOS LOS ENSALLOS 2
+ensayo_2 <- ensayos_control$errorRatio[ensayos_control$essay == "essay2"]
+
+#OBTENEMOS LOS ENSAYOS 3
+ensayo_3 <- ensayos_control$errorRatio[ensayos_control$essay == "essay3"]
+
+#RESTAMOS ENSAYO 3 - ENSAYO 2
+diferencia_ensayos <- ensayo_3 - ensayo_2
+
+#REALIZAMOS EL BOOTSTRAP
+set.seed(1234)
+#desarrolla la distribucion bootstrap sin imprimirla, basicamente obtnemos un P-value
+bootstrap_result <- bootES(diferencia_ensayos, R = 4000, ci.type = "bca", ci.conf = 0.95, plot = FALSE )
+
+
+#IMPRIMIMOS LO ANTERIOR
+print(bootstrap_result)
+
+
+
+```
+AQUI COMO SE PUEDE APRECIAR SE OBTIENE UN CI(LOW) ESTO ES EL MINIMO DEL INTERVALO DE CONFIANZA Y ESTA CI(HIGH), QUE ES EL MAXIMO DEL INTERVALO DE CONFIANZA, COMO SE PUEDE APRECIAR EL INTERVALO DE CONFIANZA NO INCLUYE EL CERO POR LO QUE SE PUEDE RECHAZAR LA HIPOTESIS NULA, POR LO QUE SE PUEDE CONCLUIR QUE LOS ESTUDIANTES DEL GRUPO DE CONTROL PUDIERON MEJORAR LA TASA DE ERRORES COMETIDOS EN EL TERCER ENSAYO RESPECTO DEL SEGUNDO.
+
+
+ejercicio 4:
+4. Considera el conjunto de datos essays descrito en la pregunta 2. Determina, usando remuestreo con permutaciones, si las y los estudiantes que recibieron retroalimentación directa mantuvieron la misma tasa de errores en el tercer y cuarto ensayo. 
+PRIMERO SE PLANTEARAN LAS HIPOTESIS
+Hipótesis Nula (Ho): Las y los estudiantes que recibieron retroalimentación directa mantuvieron la misma tasa de errores en el tercer y cuarto ensayo.
+Hipótesis Alternativa (Ha): Las y los estudiantes que recibieron retroalimentación directa no mantuvieron la misma tasa de errores en el tercer y cuarto ensayo.
+
+para hacer esto primero se deben preparar los datos
+```{r}
+# Cargar las librerías necesarias
+library(ggplot2)
+
+# Filtrar los datos para los ensayos 3 y 4 de los estudiantes con retroalimentación directa
+ensayos_directa <- subset(essays, group == "Direct")
+ensayo_3_directa <- ensayos_directa$errorRatio[ensayos_directa$essay == "essay3"]
+ensayo_4_directa <- ensayos_directa$errorRatio[ensayos_directa$essay == "essay4"]
+
+# Asegurarse de que los datos están emparejados
+if (length(ensayo_3_directa) != length(ensayo_4_directa)) {
+  stop("El número de observaciones en los ensayos 3 y 4 debe ser el mismo.")
+}
+
+# Calcular las diferencias entre ensayo 4 y ensayo 3
+diferencias <- ensayo_4_directa - ensayo_3_directa
+
+# Estadística de prueba observada
+estadistica_observada <- mean(diferencias)
+
+# Función para calcular la estadística de prueba para una permutación
+calcular_estadistica <- function(diferencias) {
+  return(mean(diferencias))
+}
+
+# Número de permutaciones
+n_reps <- 1000
+
+# Inicializar vector para almacenar las estadísticas permutadas
+estadisticas_permutadas <- numeric(n_reps)
+
+# Realizar permutaciones
+set.seed(1234)
+for (i in 1:n_reps) {
+  permutacion <- sample(diferencias)
+  estadisticas_permutadas[i] <- calcular_estadistica(permutacion)
+}
+
+# Calcular el valor p
+p_value <- mean(abs(estadisticas_permutadas) >= abs(estadistica_observada))
+
+# Imprimir resultados
+cat("Estadística Observada:", estadistica_observada, "\n")
+cat("Valor p:", p_value, "\n")
+
+# Graficar la distribución de las estadísticas permutadas
+data_permutaciones <- data.frame(estadisticas_permutadas = estadisticas_permutadas)
+
+ggplot(data_permutaciones, aes(x = estadisticas_permutadas)) +
+  geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+  geom_vline(aes(xintercept = estadistica_observada), color = "red", linetype = "dashed") +
+  labs(title = "Distribución de Estadísticas Permutadas",
+       x = "Estadística", y = "Frecuencia") +
+  theme_minimal()
+
+
+
+
+```
+
+
+
+como se puede apreciar el p-value es de 0.1 por lo que no se puede rechazar la hipotesis nula, por lo que se concluye que las y los estudiantes que recibieron retroalimentación directa mantuvieron la misma tasa de errores en el tercer y cuarto ensayo.
+
