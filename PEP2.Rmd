@@ -1,0 +1,120 @@
+---
+title: "PEP2"
+author: "Sebastián Cassone & Nicolás Salinas"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Pregunta 2
+```{r, echo = FALSE}
+library(car)
+library(caret)
+library(dplyr)
+library(ggpubr)
+library(leaps)
+library(pROC)
+library(psych)
+library(gridExtra)
+```
+
+
+Comenzamos a leer el archivo del éxito académico
+```{r}
+src_dir <- "/home/seba/Documentos/ejercicios_R/EI/estadistica-pep-2"
+src_basename <- "EI-2024-1-PE2-Datos-forma3.csv"
+src_file <- file.path(src_dir, src_basename)
+datos <- read.csv2(file = src_file, stringsAsFactors = TRUE)
+```
+
+Luego, obtenemos el conjunto de entrenamiento y de prueba
+
+```{r}
+set.seed(2128)
+muestra_a <- datos |> filter(estado == "R") |>
+  sample_n(75, replace = FALSE)
+muestra_b <- datos |> filter(estado == "A") |>
+  sample_n(75, replace = FALSE)
+
+i_train <- sample(1:75, 50)
+entrenamiento <- rbind(muestra_a[i_train, ], muestra_b[i_train, ]) |> sample_frac(1L)
+prueba <- rbind(muestra_a[-i_train, ], muestra_b[-i_train, ]) |> sample_frac(1L)
+```
+
+Una vez obtenido el conjunto de entrenamiento y de prueba. Se decide hacer una regresión logística múltiple, dado que la variable de respuesta será estado, podemos observar que es una variable dicotómica lo que la hace perfecta para este tipo de regresión.
+Luego se debe usar usar RFE para conseguir un modelo de regresión logística múltiple (RLogitM), que incluya de 3 a 6 predictores, utilizando validación cruzada dejando uno fuera para evitar el sobreajuste.
+
+```{r}
+rlogitm_fmla <- formula(paste("estado", ".", sep = " ~ "))
+rlogitm_df <- entrenamiento
+
+lrFuncs[["summary"]] <- twoClassSummary
+rlogitm_rfe_control <- rfeControl(functions = lrFuncs, method = "LOOCV", saveDetails = TRUE, returnResamp = "all", verbose = FALSE)
+rlogitm_train_control <- trainControl(method = "none", classProbs = TRUE,
+                                      summaryFunction = twoClassSummary)
+
+set.seed(17 * 11111)
+rlogitm_rfe <- suppressWarnings(
+  rfe(rlogitm_fmla, data = rlogitm_df, sizes = 3:6, metric = "ROC",
+      rfeControl = rlogitm_rfe_control, trControl = rlogitm_train_control)
+)
+rlogitm <- rlogitm_rfe[["fit"]]
+
+cat("Modelo de RLogitM obtenido con RFE:\n")
+print(summary(rlogitm))
+```
+
+Podemos ver el proceso de búsqueda realizado por RFE. Se obtiene el predictor beca, motivacion, autoestima e interpersonales.
+
+```{r plot RFE RLogitM, fig.align='center', fig.width=6, fig.height=4}
+rlogitm_rfe_p <- ggplot(rlogitm_rfe) + theme_pubr()
+print(rlogitm_rfe_p)
+```
+
+Por lo que finalmente tenemos el modelo de regresión logística múltiple. Luego vamos a verificar multicolinealidad.
+
+```{r}
+cat("Factores de inflación de la varianza:\n")
+print(vif(rlogitm))
+cat("\n")
+cat("Valores de tolerancia:\n")
+print(1 / vif(rlogitm))
+```
+
+Todos los valores de VIF están por debajo de 2, lo que sugiere que la multicolinealidad no es un problema significativo. Además, valores de tolerancia están por encima de 0.1, lo que tampoco hay un problema significativo con estos predictores.
+
+Luego se verifica sobre-influencia con el gráfico de influencia.
+
+```{r}
+rlogitm_inf_estad <- influencePlot(rlogitm, id = list(n = 3))
+
+cat("Casos notorios para el modelo de RLogitM:\n")
+print(rlogitm_inf_estad)
+cat("\n")
+cat("Rango para 95% de los residuos studentizados: ")
+cat("[", round(qt(0.05/2, nrow(rlogitm_df) - length(predictors(rlogitm)) - 2), 3), ", ", sep = "")
+cat(round(qt(1-0.05/2, nrow(rlogitm_df) - length(predictors(rlogitm)) - 2), 3), "]\n", sep = "")
+cat("Límite del apalancamiento:", round(2 * mean(hatvalues(rlogitm)), 3), "\n")
+cat("Límite de la distancia de Cook:", round(3 * mean(cooks.distance(rlogitm)), 3), "\n")
+```
+Con esto, podemos observar que no hay casos notorios que esté fuera de rango de los tres criterios anteriores.
+
+Se procede a analizar la independencia de los residuos.
+
+```{r}
+print(durbinWatsonTest(rlogitm))
+```
+Vemos que no hay razones para rechazar la independencia de los residuos de este modelo.
+
+Finalmente, evaluamos la calidad predictiva el modelo obtenido. Debido a la validación cruzada dejando a uno afuera, solo evalua una observación en cada iteración, lo que tiene una tabla de confusión en donde calcula las métricas de desempeño. Por lo que podemos conocer esto inmediatamente.
+
+```{r}
+print(rlogitm_rfe[["results"]])
+```
+Con esto, podemos observar que la curva ROC obtenida para 4 predictores que el que finalmente escogimos. Vemos que el modelo obtenido tiene un rendimiento relativamente bueno, con un área bajo la curva ROC de 0.8192.
+
+# Conclusión 
+El modelo de regresión logística múltiple obtenido con 4 predictores siendo beca, motivacion, autoestima e interpersonales verificando condiciones de multicolinealidad, sobreinfluencia e independencia, al obtener los resultados predictivos podemos observar que es bastante bueno. Por lo que concluimos que el modelo obtenido se puede generalizar que es posible predecir la sitación final de la asignatura con un AUC de 0.8192 = 81,92% que este es mayor que el 75% o más pedido en el enunciado.

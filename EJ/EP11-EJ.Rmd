@@ -482,7 +482,7 @@ Esto podemos hacerlo con el siguiente código. Nuevamente definimos una semilla 
 Notemos que se suprimen los *warnings* puesto muchas combinaciones podrían tener problemas para converger y se nos llenaría la pantalla con estos mensajes.
 </div>
 ```{r RFE RLogitM 1, cache=TRUE}
-rlogitm_df <- muestra_ext |> select(-all_of(respuesta_lineal))
+rlogitm_df <- muestra_ext |> select(-all_of(respuesta_lineal)) # lo que hace es seleccionar todas las columnas menos la que se indica
 rlogitm_fmla <- formula(paste(respuesta_binaria, ".", sep = " ~ "))
 
 lrFuncs[["summary"]] <- twoClassSummary
@@ -644,12 +644,11 @@ print(durbinWatsonTest(rlogitm))
 ```
 Vemos que no hay razones para rechazar la independencia de los residuos de este modelo.
 
-
 ### Desempeño
 
 Recordemos que el método de de validación cruzada dejando uno fuera evalúa solo una observación en cada iteración.
 Por lo tanto, al concluir, solo tiene una tabla de confusión de donde calcular las métricas de desempeño, es decir, no hay varias estimaciones del rendimiento del modelo como teníamos en las preguntas anteriores. 
-Podemos conocer el desempeño del modelo de forma directa.
+Podemos conocer el desempeño del modelo de forma directa..
 ```{r calidad predictiva modelo de RLogitM, results='hold'}
 cat("Rendimiento del modelo de RLogitM:\n")
 print(rlogitm_train[["results"]])

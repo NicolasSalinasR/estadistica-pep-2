@@ -126,8 +126,7 @@ cat("P-valor:", round(valor_p1, 3))
 
 Lo que nos lleva a la siguiente conclusión:
 
-Se puede concluir, con 95% confianza, que no hay evidencia suficiente para rechazar la hipótesis nula (𝑝=0,851
-) y tenemos que concluir que no es posible descartar que las proporciones de hombres y mujeres con problemas serios de movilidad que están cotizando para su jubilación son iguales (IC 95%=[−0,16,0,18]).
+Se puede concluir, con 95% confianza, que no hay evidencia suficiente para rechazar la hipótesis nula (𝑝=0,851) y tenemos que concluir que no es posible descartar que las proporciones de hombres y mujeres con problemas serios de movilidad que están cotizando para su jubilación son iguales (IC 95%=[−0,16,0,18]).
 
 
 # Pregunta 2
