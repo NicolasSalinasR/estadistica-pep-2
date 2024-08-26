@@ -1,0 +1,501 @@
+---
+title: ''
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(car)
+library(dplyr)
+library(ggpubr)
+library(gridExtra)
+library(leaps)
+library(tidyr)
+```
+
+Obtengamos los datos en formato ancho.
+
+```{r}
+set.seed(1111)
+src_dir <- "~/Downloads"
+src_basename <- "EP09 Datos.csv"
+src_file <- file.path(src_dir, src_basename)
+
+datos <- read.csv2(file = src_file, stringsAsFactors = TRUE)
+```
+Generemos las variables nuevas requeridas para este ejercicio.
+
+```{r}
+datos_ext <- datos |> 
+  mutate(TRG = ifelse(Knees.diameter < 19.0, "no", "sí"))
+datos_ext[["Gender"]] <- factor(datos_ext[["Gender"]])
+datos_ext[["TRG"]] <- factor(datos_ext[["TRG"]])
+```
+
+Obtenemos la muestra como indican las instrucciones 1 y 2, teniendo cuidado de desordenar los conjuntos de datos para que no queden juntos todos los casos con la misma clase, puesto que introduce artificialmente dependencia entre los datos.
+
+```{r}
+muestra_a <- datos_ext |> filter(Gender == 1 & TRG == "no") |>
+  sample_n(75, replace = FALSE)
+muestra_b <- datos_ext |> filter(Gender == 1 & TRG == "sí") |>
+  sample_n(75, replace = FALSE)
+
+i_train <- sample(1:75, 50)
+muestra_train <- rbind(muestra_a[i_train, ], muestra_b[i_train, ]) |>
+  select(-Gender) |> sample_frac(1L)
+muestra_test <- rbind(muestra_a[-i_train, ], muestra_b[-i_train, ]) |>
+  select(-Gender) |> sample_frac(1L)
+```
+
+Verificamos que no cometimos algún error con las muestras
+
+```{r}
+stopifnot(all(muestra_train$Id == unique(muestra_train$Id)))
+stopifnot(all(muestra_test$Id == unique(muestra_test$Id)))
+stopifnot(!any(muestra_train$Id %in% muestra_test))
+```
+
+Siguiendo la instrucción 3, recordemos las ocho posibles variables predictoras seleccionadas de forma aleatoria en el ejercicio anterior.
+
+```{r}
+nombre_respuesta <- "TRG"
+predictores <- c("Ankles.diameter", "Calf.Maximum.Girth", "Waist.Girth", "Bitrochanteric.diameter",
+                 "Ankle.Minimum.Girth", "Hip.Girth", "Biiliac.diameter", "Age")
+```
+
+#Regresión logística simple
+
+Corresponde seleccionar una de las otras variables (instrucción 4) que podría ser útil para predecir la variable respuesta. Para esto miremos cómo se relacionan las otras variables con la variable de respuesta, sin considerar la variable Gender que, por diseño, tiene solo un valor.
+
+```{r}
+# Obtiene relaciones entre todos los pares de variables
+otras <- colnames(muestra_train)[! colnames(muestra_train) %in% predictores]
+p1_dfl <- muestra_train |> select(all_of(otras)) |>
+  pivot_longer(-all_of(nombre_respuesta), names_to = "Variable", values_to = "Valor") |>
+  mutate(Variable = factor(Variable))
+p1 <- ggboxplot(p1_dfl, x = "Variable", y = "Valor", color = nombre_respuesta)
+p1 <- p1 +  facet_wrap( ~ Variable, ncol = 4, scales = "free") 
+print(p1)
+```
+
+Por supuesto, la variable Knees.diameter es la que exhibe menor traslape entre las clases. Es más, no existe traslape para esta variable, por lo que nos permite clasificar los casos sin errores. Como vimos, esto presenta problemas si buscamos un modelo de regresión logística, ya que se trata de separación perfecta.
+
+```{r}
+p2_dfl <- muestra_train |> select(Knees.diameter, TRG) |>
+  mutate(Id = 1:n())
+p2 <- ggscatter(p2_dfl, x = "Id", y = "Knees.diameter", color = nombre_respuesta)
+p2 <- p2 + geom_hline(yintercept = 18.95, linetype = "dashed", color = "green")
+p2 <- p2 + theme(axis.title.x = element_blank(), axis.text.x = element_blank(),
+                 axis.ticks.x = element_blank())
+print(p2)
+```
+
+Veamos cómo falla la construcción del modelo.
+
+```{r}
+rlogit_sep_perf <- glm(TRG ~ Knees.diameter, data = muestra_train,
+                       family = binomial(link = "logit"))
+```
+
+De este modo, tenemos que elegir otra variable para nuestro modelo de regresión logística simple (RLogitS). Mirando el gráfico de cajas, parece haber varias opciones: Forearm.Girth, Knee.Girth, Shoulder.Girth, Weight, Wrist.Minimum.Girth, y Wrists.diameter parecen tener niveles de solapamiento similares. Pero esta última variable parece tener la líneas de las medianas más separadas, por lo que la escogeremos para cumplir con la instrucción 5.
+
+```{r}
+predictor <- "Wrists.diameter"
+rlogits_fmla <- formula(paste(nombre_respuesta, predictor, sep = " ~ "))
+
+rlogits <- glm(rlogits_fmla, data = muestra_train,
+               family = binomial(link = "logit"))
+
+cat("Modelo de regresión logística simple\n")
+print(summary(rlogits))
+```
+
+# Regresión logística múltiple
+
+
+
+Para cumplir con la instrucción 6, vamos a utilizar el método de todos los subconjuntos para seleccionar de 2 a 5 predictores para construir un modelo de regresión logística múltiple (RLogitM), teniendo cuidado de forzar a que el predictor usado en el modelo de RLogitS esté siempre presente.
+
+```{r}
+i_respuesta <- match(nombre_respuesta, otras)
+i_predictor <- match(predictor, otras)
+fuera <- otras[-c(i_respuesta, i_predictor)]
+rlogitm_df <- muestra_train |> select(-all_of(fuera))
+
+fmla <- formula(paste(nombre_respuesta, ".", sep = " ~ "))
+rlogitm_subsets <- regsubsets(fmla, data = rlogitm_df, nbest = 1, nvmax = 5,
+                              force.in = match(predictor, colnames(rlogitm_df)),
+                              method = "exhaustive")
+
+plot(rlogitm_subsets)
+```
+
+Podemos ver que los modelos más simples son los que producen menores valores de BIC. De acuerdo a las instrucciones del enunciado, deberíamos considerar a las variables Ankles.diameter y Calf.Maximum.Girth para ser agregadas al modelo univariado.
+
+```{r}
+seleccion <- c("Ankles.diameter", "Calf.Maximum.Girth")
+rlogitm_preds_text <- paste(c(predictor, seleccion), collapse = " + ")
+rlogitm_fmla <- formula(paste(nombre_respuesta, rlogitm_preds_text, sep = " ~ "))
+
+rlogitm <- glm(rlogitm_fmla, data = muestra_train,
+               family = binomial(link = "logit"))
+
+cat("Modelo de regresión logística múltiple\n")
+print(summary(rlogitm))
+```
+
+# Confiabilidad de los modelos
+
+Ajuste
+
+Comencemos revisando la bondad de ajuste de los modelos.
+
+```{r}
+rlogits_lrt <- anova(rlogits, test = "LRT")
+rlogitm_lrt <- anova(rlogits, rlogitm, test = "LRT")
+
+cat("Bondad de ajuste del modelo univariado:\n")
+print(rlogits_lrt)
+cat("\n")
+cat("Bondad de ajuste del modelo multivariado:\n")
+print(rlogitm_lrt)
+```
+
+Vemos que el modelo simple obtiene una reducción significativa de la devianza (𝜒2(1)=21,145,𝑝<0.001) respecto del modelo nulo, y que el modelo múltiple logra reducir significativamente este estadístico respecto del modelo simple (𝜒2(2)=17,787,𝑝<0.001). Bajo este criterio entonces, ambos modelos logran una buena bondad de ajsute.
+
+Comprobemos que los residuos (estandarizados) mantienen una media cercana a cero a lo largo de sus gráficos de dispersión respecto al predictor y a las predicciones que genera. Para esto usaremos la función residualPlots() del paquete car.
+
+```{r}
+cat("Prueba de curvatura para el predictor del modelo de RLogitS:\n")
+residualPlots(rlogits, type = "rstandard", fitted = FALSE,
+                                  smooth = list(col="blue"))
+```
+
+Vemos que la media, representada por la línea azul, muestra cierta desviación del valor cero, aunque no parece importante ni se ve un patrón distinto evidente. Afortunadamente esta función entrega el resultado de una prueba de curvatura, también llamada prueba de falta de ajuste, que indica que esta no es significativa, por lo que no hay evidencia suficiente para descartar que los residuos cumplen con la suposición.
+
+Veamos ahora si esto se verifica para el modelo múltiple.
+
+```{r}
+cat("Prueba de curvatura para los predictores del modelo de RLogitM:\n")
+residualPlots(rlogitm, type = "rstandard", smooth = list(col="blue"))
+```
+
+De forma similar, las desviaciones de las medias no son significativas, por lo que el ajuste del modelo parece correcto.
+
+# Relaciones lineales
+Revisemos ahora el supuesto de linealidad, comenzando con el modelo de RLogitS.
+
+```{r}
+rlogits_lin_df <- data.frame(muestra_train[[predictor]],
+log(fitted(rlogits)/(1-fitted(rlogits))))
+colnames(rlogits_lin_df) <- c(predictor, "Logit")
+
+p_rlogits_lin <- ggscatter(data = rlogits_lin_df, x = predictor, y = "Logit",
+                           add = "reg.line", add.params = list(color = "blue"))
+print(p_rlogits_lin)
+```
+
+Vemos que la relación obtenida es perfectamente lineal con el predictor utilizado.
+
+Veamos si este resultado se repite con el modelo de RLogitM.
+
+```{r}
+rlogitm_lin_df <- muestra_train[, c(predictor, seleccion)]
+rlogitm_lin_df[["Logit"]] <- log(fitted(rlogitm)/(1-fitted(rlogitm)))
+colnames(rlogitm_lin_df) <- c(predictor, seleccion, "Logit")
+
+rlogitm_lin_dfl <- pivot_longer(rlogitm_lin_df, -Logit,
+                                names_to = "Predictor", values_to = "Valor")
+
+p_rlogitm_lin <- ggscatter(data = rlogitm_lin_dfl, x = "Valor", y = "Logit",
+                           add = "reg.line", add.params = list(color = "blue"))
+p_rlogitm_lin <- p_rlogitm_lin + facet_wrap(~ Predictor, scales = "free_x")
+print(p_rlogitm_lin)
+```
+
+¡Bien! Claramente el modelo logra establecer relaciones lineales con los predictores.
+
+Casos sobre influyentes
+
+Hagamos nuevamente uso de los gráficos de diagnósticos provistos por el paquete car. En este caso, podemos usar la función influencePlot() para representar de forma gráfica tres métricas de influencia: residuos studentizados versus apalancamiento (hat values) y círculos cuyas áreas son proporcionales a la distancia de Cook. Comencemos con el modelo univariado.
+
+```{r}
+rlogits_inf_estad <- influencePlot(rlogits, id = list(n = 3))
+```
+
+```{r}
+cat("Casos notorios para el modelo de RLogitS:\n")
+print(rlogits_inf_estad)
+```
+
+Además del gráfico, la función lista n casos que destacan según cada uno de estos tres criterios. En la llamada que hicimos anteriormente solicitamos tres casos para cada uno, pero como algunos se repiten, la función devuelve solo cinco casos.
+
+Recordemos los criterios asociados a estas métricas que usamos para identificar casos sospechosos:
+
+    residuos que estén más allá de ±2
+
+desviaciones estándares. Para este caso: 𝑄𝑡(0,025;𝜈=99)=±1,984
+.
+observaciones con apalancamiento superior al doble (o triple) del apalancamiento promedio. Para este caso: ℎ̂ ⎯⎯⎯=2𝑘+1𝑛=22100=0,4
+.
+observaciones con distancia de Cook mayor a 0,5
+
+    o muy superior al resto.
+
+Podemos observar que ninguno de los residuos destacados cumple con estas condiciones. Tal vez el caso 1 podría considerarse algo problemático, pues exhibe una distancia de Cook superior al doble del resto y tiene los valores más altos para los otros criterios (con un empate en apalancamiento con el caso 441). Verifiquemos si el modelo cambia mucho eliminando estas observaciones. Nuevamente el paquete car nos facilita la vida, ahora por medio de la función compareCoefs().
+
+```{r}
+rlogits_inf_ids <- as.integer(rownames(rlogits_inf_estad))
+rlogits_comp_f <- function(s) {
+  mat <- eval(bquote(compareCoefs(rlogits, update(rlogits, subset = -.(s)), print = FALSE)))
+  rownames(mat) <- paste(rownames(mat), "sin caso", s)
+  invisible(mat)
+} 
+rlogits_comp_list <- lapply(rlogits_inf_ids, rlogits_comp_f) 
+rlogits_comp <- do.call(rbind, rlogits_comp_list)
+
+# Agregamos el cambio porcentual
+Cambio <- abs((rlogits_comp[, 1]-rlogits_comp[, 3])/rlogits_comp[, 1]) * 100
+rlogits_comp <- cbind(rlogits_comp, Cambio)
+
+cat("Comparación de modelos de RLogitS con y sin el caso problemático:\n")
+printCoefmat(rlogits_comp, digits = 2)
+```
+
+Podemos ver que los casos 1 y 46 provocan cambios en los coeficientes alrededor de 1,5. Si bien esto no parece mucho, es mucho mayor a lo que generan las otras observaciones. Por esta razón, mejor las eliminamos del modelo.
+
+```{r}
+rlogits <- update(rlogits, subset = -c(1, 46))
+
+cat("Modelo de regresión logística simple actualizado\n")
+print(summary(rlogits))
+```
+
+Repetimos el proceso con el modelo múltiple.
+
+```{r}
+rlogitm_inf_estad <- influencePlot(rlogitm, id = list(n = 3))
+cat("Casos notorios para el modelo de RLogitM:\n")
+print(rlogitm_inf_estad)
+```
+
+Para este modelo, los valores críticos para los residuos studentizados y apalancamiento son 𝑄𝑡(0,025;𝜈=97)=±1,985 y ℎ̂ ⎯⎯⎯=24100=0,08., respectivamente. Vemos que 3 casos con residuos fuera de rango para el 95%
+
+de los datos, lo que es completamente normal. Hay varios casos que sobrepasan el doble del apalancamiento promedio, e incluso el caso 46 sobrepasa el triple de este valor. Ningún caso exhibe distancias de Cook altas, aunque los casos 1, 8 y 231 muestran valores bastante mayores al resto.
+
+Revisemos su influencia en los coeficientes.
+
+```{r}
+rlogitm_inf_ids <- as.integer(rownames(rlogitm_inf_estad))
+rlogitm_comp_f <- function(s) {
+  mat <- eval(bquote(compareCoefs(rlogitm, update(rlogitm, subset = -.(s)), print = FALSE)))
+  rownames(mat) <- paste(rownames(mat), "sin caso", s)
+  invisible(mat)
+} 
+rlogitm_comp_list <- lapply(rlogitm_inf_ids, rlogitm_comp_f) 
+rlogitm_comp <- do.call(rbind, rlogitm_comp_list)
+
+# Agregamos el cambio porcentual
+Cambio <- abs((rlogitm_comp[, 1]-rlogitm_comp[, 3])/rlogitm_comp[, 1]) * 100
+rlogitm_comp <- cbind(rlogitm_comp, Cambio)
+
+cat("Comparación de modelos de rlogitm con y sin el caso problemático:\n")
+printCoefmat(rlogitm_comp, digits = 2)
+```
+
+Vemos que eliminar los casos 8 o 58 cambia el coeficiente asociado al predictor ‘Ankles.diameter’ en más de 3,5%. Eliminando alguno de estos mismos casos o el caso 1 cambia el el coeficiente para el predictor Calf.Maximum.Girth en alrededor de 6,4% para los primeros y ¡17,1% para el último. Eliminando los casos 46 o 58 cambia el coeficiente del predictor Wrists.diameter en más de 5,1%. Notemos que la presencia de estos casos problemáticos podía deslumbrarse en los gráficos de linealidad que hicimos más arriba. Eliminémoslos del modelo.
+
+```{r}
+rlogitm <- update(rlogitm, subset = -c(1, 8, 46, 58))
+
+cat("Modelo de regresión logística múltiple actualizado\n")
+print(summary(rlogitm))
+```
+
+# Independencia de los residuos
+Confirmemos que no existe dependencia entre los residuos generados por el modelo de RLogitS.
+```{r}
+cat("Prueba de la independencia de los residuos para el modelo de RLogitS:\n")
+print(durbinWatsonTest(rlogits))
+```
+
+
+
+Vemos que no hay razones para sospechar que los residuos no sean independientes para este modelo.
+
+Confirmemos que esto también se da para el modelo de RLogitM.
+
+```{r}
+cat("Prueba de la independencia de los residuos para el modelo de RLogitM:\n")
+print(durbinWatsonTest(rlogitm))
+```
+
+¡Estupendo! No hay evidencia que nos indique falta de independencia de los residuos en este modelo tampoco.
+
+# Multicolinealidad
+Solo nos queda revisar si nuestro modelo múltiple presenta problemas de multicolinealidad.
+
+```{r}
+cat("Factores de inflación de la varianza:\n")
+print(vif(rlogitm))
+cat("\n")
+cat("Valores de tolerancia:\n")
+print(1 / vif(rlogitm))
+```
+¡Fantástico! Podemos notar que todos los factores de inflación de la varianza están lejos del límite de 10 y ninguna tolerancia es menos a 0,2, lo que indicaría que no hay presencia de multicolinealidad.
+
+# Resultado
+
+Concluimos que tanto el modelo de RLogitS como el de RLogitM son confiables, luego de eliminar algunos casos sobre influyentes que se habían considerado en los modelos iniciales.
+
+# Poder predictivo
+
+La instrucción 8 nos pide evaluar la calidad predictiva de los modelos en términos de sensibilidad y especificidad (pero sin usar el paquete caret).
+
+Comenzamos obteniendo las predicciones del modelo de RLogitS, tanto en los datos de entrenamiento como en los datos de prueba. Para esto, usaremos el umbral por defecto, y reordenamos las clases para que la clase positiva sea sí.
+
+```{r}
+umbral <- 0.5
+
+rlogits_probs_train <- fitted(rlogits)
+rlogits_preds_train <- sapply(rlogits_probs_train,
+function (p) ifelse (p < umbral, "no", "sí"))
+rlogits_preds_train <- factor(rlogits_preds_train, levels = rev(levels(muestra_train[[nombre_respuesta]])))
+
+rlogits_probs_test <- predict(rlogits, muestra_test, type = "response")
+rlogits_preds_test <- sapply(rlogits_probs_test,
+function (p) ifelse (p < umbral, "no", "sí"))
+rlogits_preds_test <- factor(rlogits_preds_test, levels = rev(levels(muestra_train[[nombre_respuesta]])))
+```
+
+Teniendo las predicciones, podemos formar las matrices de confusión y calcular la sensibilidad y especificidad (teniendo cuidado de también dar vuelta las clases en los datos observados).
+
+```{r}
+rlogits_obs_train <- factor(rlogits[["data"]][names(fitted(rlogits)), nombre_respuesta], levels = rev(levels(muestra_train[[nombre_respuesta]])))
+rlogits_obs_test <- factor(muestra_test[[nombre_respuesta]], levels = rev(levels(muestra_train[[nombre_respuesta]])))
+
+rlogits_train_conf_mat <- table(Predicho = rlogits_preds_train, Observado = rlogits_obs_train)
+rlogits_test_conf_mat <- table(Predicho = rlogits_preds_test, Observado = rlogits_obs_test)
+
+cat("Matriz de confusión del modelo de RLogitS en datos de entrenamiento:\n")
+print(rlogits_train_conf_mat)
+cat("\n")
+cat("Matriz de confusión del modelo de RLogitS en datos de prueba:\n")
+print(rlogits_test_conf_mat)
+```
+
+Obtengamos la exactitud, sensibilidad y especificidad en cada caso y comparemos sus diferencias al pasar de datos vistos por el modelo a no vistos.
+
+```{r}
+rlogits_train_exa <- (rlogits_train_conf_mat[1, 1] + rlogits_train_conf_mat[2, 2]) /
+sum(rlogits_train_conf_mat)
+rlogits_train_sen <- rlogits_train_conf_mat[1, 1] /
+sum(rlogits_train_conf_mat[, 1])
+rlogits_train_esp <- rlogits_train_conf_mat[2, 2] /
+sum(rlogits_train_conf_mat[, 2])
+
+rlogits_test_exa <- (rlogits_test_conf_mat[1, 1] + rlogits_test_conf_mat[2, 2]) /
+sum(rlogits_test_conf_mat)
+rlogits_test_sen <- rlogits_test_conf_mat[1, 1] /
+sum(rlogits_test_conf_mat[, 1])
+rlogits_test_esp <- rlogits_test_conf_mat[2, 2] /
+sum(rlogits_test_conf_mat[, 2])
+
+rlogits_cambio_exa <- (rlogits_train_exa - rlogits_test_exa) / rlogits_test_exa * 100
+rlogits_cambio_sen <- (rlogits_train_sen - rlogits_test_sen) / rlogits_test_sen * 100
+rlogits_cambio_esp <- (rlogits_train_esp - rlogits_test_esp) / rlogits_test_esp * 100
+
+cat("Rendimiento del modelo de RLogitS en datos de entrenamiento:\n")
+cat(sprintf("    Exactitud: %.2f\n", rlogits_train_exa))
+cat(sprintf(" Sensibilidad: %.2f\n", rlogits_train_sen))
+cat(sprintf("Especificidad: %.2f\n", rlogits_train_esp))
+cat("\n")
+cat("Rendimiento del modelo de RLogitS en datos de prueba:\n")
+cat(sprintf("    Exactitud: %.2f\n", rlogits_test_exa))
+cat(sprintf(" Sensibilidad: %.2f\n", rlogits_test_sen))
+cat(sprintf("Especificidad: %.2f\n", rlogits_test_esp))
+cat("\n")
+cat("Cambio porcentual en el rendimiento del modelo de RLogitS:\n")
+cat(sprintf("    Exactitud: %7.2f%%\n", rlogits_cambio_exa))
+cat(sprintf(" Sensibilidad: %7.2f%%\n", rlogits_cambio_sen))
+cat(sprintf("Especificidad: %7.2f%%\n", rlogits_cambio_esp))
+```
+Vemos que la exactitud no sufre un cambio importante, pero sí se observa un aumnento en la sensibilidad y una caída de la especificidad. En general, parece que el modelo se comporta bien con datos no vistos.
+
+Repitamos el análisis con el modelo múltiple.
+
+```{r}
+rlogitm_probs_train <- fitted(rlogitm)
+rlogitm_preds_train <- sapply(rlogitm_probs_train,
+function (p) ifelse (p < umbral, "no", "sí"))
+rlogitm_preds_train <- factor(rlogitm_preds_train, levels = rev(levels(muestra_train[[nombre_respuesta]])))
+
+rlogitm_probs_test <- predict(rlogitm, muestra_test, type = "response")
+rlogitm_preds_test <- sapply(rlogitm_probs_test,
+function (p) ifelse (p < umbral, "no", "sí"))
+rlogitm_preds_test <- factor(rlogitm_preds_test, levels = rev(levels(muestra_train[[nombre_respuesta]])))
+
+rlogitm_obs_train <- factor(rlogitm[["data"]][names(fitted(rlogitm)), nombre_respuesta],
+                            levels = rev(levels(muestra_train[[nombre_respuesta]])))
+rlogitm_obs_test <- factor(muestra_test[[nombre_respuesta]],
+                           levels = rev(levels(muestra_train[[nombre_respuesta]])))
+
+rlogitm_train_conf_mat <- table(Predicho = rlogitm_preds_train, Observado = rlogitm_obs_train)
+rlogitm_test_conf_mat <- table(Predicho = rlogitm_preds_test, Observado = rlogitm_obs_test)
+
+cat("Matriz de confusión del modelo de RLogitM en datos de entrenamiento:\n")
+print(rlogitm_train_conf_mat)
+cat("\n")
+cat("Matriz de confusión del modelo de RLogitM en datos de prueba:\n")
+print(rlogitm_test_conf_mat)
+```
+
+Obtengamos las métricas de desempeño y comparémoslas al pasar de datos vistos a los no vistos.
+
+```{r}
+rlogitm_train_exa <- (rlogitm_train_conf_mat[1, 1] + rlogitm_train_conf_mat[2, 2]) /
+sum(rlogitm_train_conf_mat)
+rlogitm_train_sen <- rlogitm_train_conf_mat[1, 1] /
+sum(rlogitm_train_conf_mat[, 1])
+rlogitm_train_esp <- rlogitm_train_conf_mat[2, 2] /
+sum(rlogitm_train_conf_mat[, 2])
+
+rlogitm_test_exa <- (rlogitm_test_conf_mat[1, 1] + rlogitm_test_conf_mat[2, 2]) /
+sum(rlogitm_test_conf_mat)
+rlogitm_test_sen <- rlogitm_test_conf_mat[1, 1] /
+sum(rlogitm_test_conf_mat[, 1])
+rlogitm_test_esp <- rlogitm_test_conf_mat[2, 2] /
+sum(rlogitm_test_conf_mat[, 2])
+
+rlogitm_cambio_exa <- (rlogitm_train_exa - rlogitm_test_exa) / rlogitm_test_exa * 100
+rlogitm_cambio_sen <- (rlogitm_train_sen - rlogitm_test_sen) / rlogitm_test_sen * 100
+rlogitm_cambio_esp <- (rlogitm_train_esp - rlogitm_test_esp) / rlogitm_test_esp * 100
+
+cat("Rendimiento del modelo de RLogitM en datos de entrenamiento:\n")
+cat(sprintf("    Exactitud: %.2f\n", rlogitm_train_exa))
+cat(sprintf(" Sensibilidad: %.2f\n", rlogitm_train_sen))
+cat(sprintf("Especificidad: %.2f\n", rlogitm_train_esp))
+cat("\n")
+cat("Rendimiento del modelo de RLogitM en datos de prueba:\n")
+cat(sprintf("    Exactitud: %.2f\n", rlogitm_test_exa))
+cat(sprintf(" Sensibilidad: %.2f\n", rlogitm_test_sen))
+cat(sprintf("Especificidad: %.2f\n", rlogitm_test_esp))
+cat("\n")
+cat("Cambio porcentual en el rendimiento del modelo de RLogitM:\n")
+cat(sprintf("    Exactitud: %7.2f%%\n", rlogitm_cambio_exa))
+cat(sprintf(" Sensibilidad: %7.2f%%\n", rlogitm_cambio_sen))
+cat(sprintf("Especificidad: %7.2f%%\n", rlogitm_cambio_esp))
+```
+
+¡Oh! Aquí sí hay una caída notoria de todas las métricas de desempeño cuando el modelo hace predicciones con datos no vistos.
+
+# Resultado
+
+Ambos modelos muestran un calidad predictiva moderada, con una sensibilidad sobre 70%
+y una especificidad sobre 60% en datos no utilizados para construirlos.
+
+El modelo simple muestra cierta estabilidad en el rendimiento al pasar de datos conocidos a desconocidos. Sin embargo, el modelo de RLogM parece tener problemas de generalización puesto que presenta una caída importante en el rendimiento al ser aplicado a datos no conocidos. Esto es una indicación de sobreajuste y habría que explorar la eliminación de algún predictor, aunque eso nos haría incumplir con lo solicitado en el enunciado.
