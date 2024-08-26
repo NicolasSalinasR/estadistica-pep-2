@@ -1,6 +1,6 @@
 ---
 title: "PEP2"
-author: "Sebastián Cassone & Nicolás Salinas"
+author: ""
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -108,7 +108,6 @@ muestra_b <- datos |> filter(estado == "A") |>
 
 i_train <- sample(1:75, 50)
 entrenamiento <- rbind(muestra_a[i_train, ], muestra_b[i_train, ]) |> sample_frac(1L)
-prueba <- rbind(muestra_a[-i_train, ], muestra_b[-i_train, ]) |> sample_frac(1L)
 ```
 
 Una vez obtenido el conjunto de entrenamiento y de prueba. Se decide hacer una regresión logística múltiple, dado que la variable de respuesta será estado, podemos observar que es una variable dicotómica lo que la hace perfecta para este tipo de regresión.
