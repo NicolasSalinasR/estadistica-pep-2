@@ -1,0 +1,7 @@
+---
+title: "pep 2 estadistica inferencial"
+output: html_document
+date: "2024-08-26"
+---
+
+
