@@ -1,0 +1,78 @@
+---
+title: "pep 2 estadistica inferencial"
+output: html_document
+date: "2024-08-26"
+---
+
+
+
+Librerias requeridas
+```{r}
+library(WRS2)
+library(boot)
+library(simpleboot)
+library(ggpubr)
+library(bootES)
+```
+
+
+## pregunta 1
+
+Ya que el profesor oak desea evaluar su nueva estrategia de entrenamiento pokemon ah aumentado la velocidad de ataque (Va) de sus pokemones en mas de 1 punto.para esto se ah recolectado una muestra aleatoria de 10 pokemones de entre mas de 600.
+
+Para realizar este analisis se solicitar utilizar bootstraping, primeramente se deben cargar los datos a utilizar por lo tanto se creara el data frame
+```{r}
+#Se crea el data.frame
+pokemon <- data.frame(
+  pokemon = c("pikachu", "charmander", "bulbasaur", "squirtle", "Lapras", "Gengar", "Kadabra", "Magikarp", "Snorlax", "kabutops"),
+  Antes = c(16.16, 12.29, 14.45, 9.60, 12.95, 9.37, 19.61, 7.24, 11.81, 13.96),
+  Despues = c(11.38, 6.26, 7.64, 8.92, 16.10, 9.54, 14.72, 12.02, 15.49, 17.68)
+)
+
+```
+una vez cargados los datos se procedera a realizar la hipotesis nula y la hipotesis alternativa
+
+Ho: la velocidad de ataque de los pokemones no ha cambiado despues de la nueva estrategia de entrenamiento 
+Ha: la velocidad de ataque de los pokemones ha aumentado mas de un punto despues del entrenamiento 
+
+
+
+Al analisar las muestras podemos darnos cuenta que son muestras dependientes debido a que una es la velocidad de ataque antes del entrenamiento de los pokemones y la otra es la valocidad de ataque despues del entrenamiento de los mismos pokemones, debido a que siempre son los mismos pokemones se puede apreciar que son muestras dependientes
+
+Por lo tanto debemos utilizar bootstraping para muestras pareadas, por lo tanto se deben restar los valores de "Antes" y "Despues" para obtener la diferencia de velocidad de ataque de cada pokemon y a dicha diferencia aplicar bootstraping
+
+
+cabe señalar que el estadistico a utilizar sera la velocidad de ataque de los pokemones debido a que este es el valor que se desea evaluar si ha cambiado o no despues del entrenamiento.
+
+```{r}
+#Se restan los valores de "Antes" y "Despues" para obtener la diferencia de velocidad de ataque de cada pokemon
+pokemon_diferencia <- pokemon$Antes - pokemon$Despues
+
+```
+
+una vez tenemos la diferencia entre las velocidades de ataque, se puede proceder a definir los valores para realizar bootstraping
+
+```{r}
+confianza = 0.99
+repeticiones = 100
+```
+una vez definidos los datos que como se puede apreciar es el nivel de confianza solicitado el cual es de 99%, y la cantidad de repeticiones la cual es de 100, se puede proceder a realizar bootstraping
+
+```{r}
+# se define la semilla
+set.seed(1234)
+#Se realiza el bootstraping
+
+
+bootstrap_result <- bootES(pokemon_diferencia, R = repeticiones, ci.type = "bca", ci.conf =confianza, plot = TRUE )
+
+print(bootstrap_result)
+
+
+```
+Como se logra apreciar en los resultados obtenidos se obtiene un CI(low) de -2.154, y un CI(High) de 5.229, sabiendo que CI hace referencia a los limites inferior y superior del intervalo de confianza, se puede apreciar que el intervalo de confianza es de -2.154 a 5.229, este intervalo incluye valores menores a 1, esto genera que aunque el entrenamiento pueda hace que la velocidad de ataque aumente en mas de 1 punto tambien puede aumentar en menos de 1 punto eh incluso puede disminuir en algunos casos.
+
+En conclusion no existe evidencia suficiente para rechazar la hipotesis nula en favor de la hipotesis alternativa sobre el aumento en 1 punto de la velocidad de ataque de los pokemones del profesor oak.
+
+
+
