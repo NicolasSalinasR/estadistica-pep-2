@@ -9,7 +9,74 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Pregunta 2
+## Pregunta 1
+
+Librerias requeridas
+```{r}
+library(WRS2)
+library(boot)
+library(simpleboot)
+library(ggpubr)
+library(bootES)
+```
+
+Ya que el profesor Oak desea evaluar su nueva estrategia de entrenamiento Pokémon, ha aumentado la velocidad de ataque  de sus Pokémon en más de 1 punto. Para esto, se ha recolectado una muestra aleatoria de 10 Pokémon de entre más de 600.
+
+Para realizar este análisis se solicitará utilizar bootstrapping. Primeramente, se deben cargar los datos a utilizar; por lo tanto, se creará el DataFrame.
+
+
+```{r}
+#Se crea el data.frame
+pokemon <- data.frame(
+  pokemon = c("pikachu", "charmander", "bulbasaur", "squirtle", "Lapras", "Gengar", "Kadabra", "Magikarp", "Snorlax", "kabutops"),
+  Antes = c(16.16, 12.29, 14.45, 9.60, 12.95, 9.37, 19.61, 7.24, 11.81, 13.96),
+  Despues = c(11.38, 6.26, 7.64, 8.92, 16.10, 9.54, 14.72, 12.02, 15.49, 17.68)
+)
+
+```
+Una vez cargados los datos, se procederá a realizar la hipótesis nula y la hipótesis alternativa:
+
+Ho: La velocidad de ataque de los Pokémon no ha cambiado después de la nueva estrategia de entrenamiento: u = ub
+Ha: La velocidad de ataque de los Pokémon ha aumentado más de un punto después del entrenamiento: u > ub
+
+Al analizar las muestras, podemos darnos cuenta de que son muestras dependientes, ya que una corresponde a la velocidad de ataque antes del entrenamiento y la otra a la velocidad de ataque después del entrenamiento de los mismos Pokémon. Debido a que siempre son los mismos Pokémon, se puede apreciar que son muestras dependientes.
+
+Por lo tanto, debemos utilizar bootstrapping para muestras pareadas. Primero, se deben restar los valores de "Antes" y "Después" para obtener la diferencia en la velocidad de ataque de cada Pokémon, y a esta diferencia se le aplicará bootstrapping.
+
+Cabe señalar que el estadístico a utilizar será la diferencia en la velocidad de ataque de los Pokémon, ya que este es el valor que se desea evaluar para determinar si ha cambiado o no después del entrenamiento.
+
+```{r}
+#Se restan los valores de "Antes" y "Despues" para obtener la diferencia de velocidad de ataque de cada pokemon
+pokemon_diferencia <- pokemon$Antes - pokemon$Despues
+
+```
+
+Una vez que tengamos la diferencia entre las velocidades de ataque, podemos proceder a definir los valores para realizar bootstrapping.
+
+```{r}
+confianza = 0.99
+repeticiones = 100
+```
+Una vez definidos los datos, que, como se puede apreciar, son el nivel de confianza solicitado, el cual es del 99%, y la cantidad de repeticiones, que es de 100, se puede proceder a realizar bootstrapping.
+
+```{r}
+# se define la semilla
+set.seed(1234)
+#Se realiza el bootstraping
+
+
+bootstrap_result <- bootES(pokemon_diferencia, R = repeticiones, ci.type = "bca", ci.conf =confianza, plot = TRUE )
+
+print(bootstrap_result)
+
+
+```
+Como se puede apreciar en los resultados obtenidos, se obtiene un CI(low) de -2.154 y un CI(high) de 5.229. Sabemos que CI hace referencia a los límites inferior y superior del intervalo de confianza. Se puede observar que el intervalo de confianza es de -2.154 a 5.229. Este intervalo incluye valores menores a 1, lo que sugiere que, aunque el entrenamiento pueda hacer que la velocidad de ataque aumente en más de 1 punto, también puede aumentar en menos de 1 punto e incluso disminuir en algunos casos.
+
+En conclusión, no existe evidencia suficiente para rechazar la hipótesis nula en favor de la hipótesis alternativa sobre el aumento en 1 punto de la velocidad de ataque de los Pokémon del profesor Oak.
+
+## Pregunta 2
+Se importan las librerías necesarias para el desarrollo del ejercicio.
 ```{r, echo = FALSE}
 library(car)
 library(caret)
@@ -22,7 +89,7 @@ library(gridExtra)
 ```
 
 
-Comenzamos a leer el archivo del éxito académico
+Comenzamos a leer el archivo del éxito académico.
 ```{r}
 src_dir <- "/home/seba/Documentos/ejercicios_R/EI/estadistica-pep-2"
 src_basename <- "EI-2024-1-PE2-Datos-forma3.csv"
@@ -30,7 +97,7 @@ src_file <- file.path(src_dir, src_basename)
 datos <- read.csv2(file = src_file, stringsAsFactors = TRUE)
 ```
 
-Luego, obtenemos el conjunto de entrenamiento y de prueba
+Luego, obtenemos el conjunto de entrenamiento y de prueba.
 
 ```{r}
 set.seed(2128)
